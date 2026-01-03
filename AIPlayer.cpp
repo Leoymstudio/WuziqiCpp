@@ -4,44 +4,90 @@
 #include <vector>
 #include <ctime>
 #include <cstdlib>
+#include <fstream> // 文件流
 
 using namespace std;
 
 CAIPlayer::CAIPlayer(int color) : CPlayer(color) {
-    srand((unsigned)time(NULL)); // 初始化随机数种子
+    srand((unsigned)time(NULL));
+    m_strWeightFile = "ai_brain.txt"; // 大脑记忆文件
+    LoadWeights(); // 出生时先读取记忆
+}
+
+// [新增] 读取记忆
+void CAIPlayer::LoadWeights() {
+    ifstream file(m_strWeightFile);
+    if (file.is_open()) {
+        file >> m_stWeights.iWin5 >> m_stWeights.iLive4 >> m_stWeights.iDash4
+             >> m_stWeights.iLive3 >> m_stWeights.iLive2
+             >> m_stWeights.fAttackFactor >> m_stWeights.fDefenseFactor;
+        file.close();
+    } else {
+        // 如果没有记忆，使用默认值 (什么都不做)
+    }
+}
+
+// [新增] 保存记忆
+void CAIPlayer::SaveWeights() {
+    ofstream file(m_strWeightFile);
+    if (file.is_open()) {
+        file << m_stWeights.iWin5 << " " << m_stWeights.iLive4 << " "
+             << m_stWeights.iDash4 << " " << m_stWeights.iLive3 << " "
+             << m_stWeights.iLive2 << " "
+             << m_stWeights.fAttackFactor << " " << m_stWeights.fDefenseFactor;
+        file.close();
+    }
+}
+
+// [新增] 核心进化逻辑
+void CAIPlayer::Learn(bool bAiWon) {
+    if (bAiWon) {
+        // 如果赢了，稍微增强一点自信（进攻欲望）
+        // 或者是保持现状，认为当前策略是好的
+        // 这里我们设计：赢了就微调，让它更激进一点点
+        m_stWeights.fAttackFactor += 0.05f;
+        if(m_stWeights.fAttackFactor > 2.0f) m_stWeights.fAttackFactor = 2.0f; // 封顶
+
+        cout << "\n [AI复盘] 哈哈！我赢了！我觉得我的进攻策略很棒！(进攻欲望↑)" << endl;
+    } else {
+        // 如果输了，反思：是不是我太浪了？还是防守不够？
+        // 策略：增加防守权重，降低进攻权重
+        m_stWeights.fDefenseFactor += 0.1f;
+        m_stWeights.fAttackFactor -= 0.05f;
+
+        if (m_stWeights.fDefenseFactor > 2.5f) m_stWeights.fDefenseFactor = 2.5f;
+        if (m_stWeights.fAttackFactor < 0.5f) m_stWeights.fAttackFactor = 0.5f;
+
+        cout << "\n [AI复盘] 哎呀输了... 我下次会更注意防守的。 (防守意识↑)" << endl;
+    }
+    // 这一步很关键：把学到的新参数存进硬盘
+    SaveWeights();
 }
 
 Point CAIPlayer::MakeMove(CBoard& board) {
-    cout << endl << ">> 电脑正在思考..." << endl;
-    
-    // 简单的延时，假装在思考 (提升体验)
-    // 实际上这个算法计算很快
+    cout << endl << ">> 电脑正在思考 (攻:" << m_stWeights.fAttackFactor
+         << " 防:" << m_stWeights.fDefenseFactor << ")..." << endl;
+
     clock_t start = clock();
-    while (clock() - start < 800); // 停顿0.8秒
+    while (clock() - start < 500);
 
     int maxScore = -99999999;
     vector<Point> bestPoints;
 
-    // 遍历棋盘所有点
     for (int y = 0; y < BOARD_SIZE; y++) {
         for (int x = 0; x < BOARD_SIZE; x++) {
             if (!board.IsEmpty(x, y)) continue;
 
-            // 1. 如果我是黑棋，先检查是不是禁手
-            // 如果是禁手，绝对不能走，分数为负无穷
             if (m_iColor == BLACK) {
-                board.PlacePiece(x, y, BLACK); // 假装下子
+                board.PlacePiece(x, y, BLACK);
                 if (CReferee::CheckForbidden(board, x, y)) {
-                    board.UndoPiece(x, y); // 撤销
-                    continue; // 跳过这个点
+                    board.UndoPiece(x, y);
+                    continue;
                 }
-                board.UndoPiece(x, y); // 记得撤销
+                board.UndoPiece(x, y);
             }
 
-            // 2. 评估该点分数
             int score = EvaluatePoint(board, x, y);
-
-            // 3. 收集最高分
             if (score > maxScore) {
                 maxScore = score;
                 bestPoints.clear();
@@ -52,89 +98,72 @@ Point CAIPlayer::MakeMove(CBoard& board) {
         }
     }
 
-    // 如果无处可下（极少见）
     if (bestPoints.empty()) return {7, 7};
-
-    // 在最高分里随机选一个，防止走法太死板
     int index = rand() % bestPoints.size();
     return bestPoints[index];
 }
 
-// 评分函数：核心智能
 int CAIPlayer::EvaluatePoint(CBoard& board, int x, int y) {
     int totalScore = 0;
-
     int myColor = m_iColor;
     int enemyColor = (m_iColor == BLACK) ? WHITE : BLACK;
 
-    // 策略：进攻分 + 防守分
-    // 通常防守比进攻重要，但如果能直接赢，进攻最重要
-    
-    // 1. 计算进攻分 (对自己有利)
-    // 系数 1.0
-    totalScore += GetLineScore(board, x, y, 1, 0, myColor); // 横
-    totalScore += GetLineScore(board, x, y, 0, 1, myColor); // 竖
-    totalScore += GetLineScore(board, x, y, 1, 1, myColor); // 斜
-    totalScore += GetLineScore(board, x, y, 1, -1, myColor);// 反斜
+    // 使用读取到的权重参数进行计算
+    int myScore = 0;
+    myScore += GetLineScore(board, x, y, 1, 0, myColor);
+    myScore += GetLineScore(board, x, y, 0, 1, myColor);
+    myScore += GetLineScore(board, x, y, 1, 1, myColor);
+    myScore += GetLineScore(board, x, y, 1, -1, myColor);
 
-    // 2. 计算防守分 (破坏敌人)
-    // 系数 0.9 (或者更高，如果想让AI很龟缩)
-    // 我们单独算，如果发现敌人有必杀棋，给极高分去堵
-    int defenseScore = 0;
-    defenseScore += GetLineScore(board, x, y, 1, 0, enemyColor);
-    defenseScore += GetLineScore(board, x, y, 0, 1, enemyColor);
-    defenseScore += GetLineScore(board, x, y, 1, 1, enemyColor);
-    defenseScore += GetLineScore(board, x, y, 1, -1, enemyColor);
+    // 乘上性格系数
+    totalScore += (int)(myScore * m_stWeights.fAttackFactor);
 
-    // 如果防守分特别高（比如对面要赢了），我们优先堵
-    // 这里的权重调节是 AI 强弱的关键
-    if (defenseScore > 10000) totalScore += defenseScore + 1000; 
-    else totalScore += defenseScore;
+    int enemyScore = 0;
+    enemyScore += GetLineScore(board, x, y, 1, 0, enemyColor);
+    enemyScore += GetLineScore(board, x, y, 0, 1, enemyColor);
+    enemyScore += GetLineScore(board, x, y, 1, 1, enemyColor);
+    enemyScore += GetLineScore(board, x, y, 1, -1, enemyColor);
 
-    // 中央位置稍微加点分 (开局抢占天元附近)
+    // 乘上性格系数
+    totalScore += (int)(enemyScore * m_stWeights.fDefenseFactor);
+
     if (x >= 5 && x <= 9 && y >= 5 && y <= 9) totalScore += 10;
 
     return totalScore;
 }
 
-// 计算某个方向的分数
 int CAIPlayer::GetLineScore(CBoard& board, int x, int y, int dx, int dy, int color) {
-    // 模拟连珠数
-    int count = 1; // 假设自己下在这里
+    int count = 1;
     int emptyEnds = 0;
 
-    // 正向
+    // ... (中间的扫描代码保持不变) ...
+    // 这里为了节省篇幅省略，请使用上一版相同的扫描逻辑
+    // 仅修改下面的 return 值，使用 m_stWeights 中的变量
+
+    // 正向扫描...
     int i = 1;
-    while (board.IsValid(x + dx*i, y + dy*i) && board.GetPiece(x + dx*i, y + dy*i) == color) {
-        count++; i++;
-    }
+    while (board.IsValid(x + dx*i, y + dy*i) && board.GetPiece(x + dx*i, y + dy*i) == color) { count++; i++; }
     if (board.IsValid(x + dx*i, y + dy*i) && board.GetPiece(x + dx*i, y + dy*i) == EMPTY) emptyEnds++;
 
-    // 反向
+    // 反向扫描...
     int j = 1;
-    while (board.IsValid(x - dx*j, y - dy*j) && board.GetPiece(x - dx*j, y - dy*j) == color) {
-        count++; j++;
-    }
+    while (board.IsValid(x - dx*j, y - dy*j) && board.GetPiece(x - dx*j, y - dy*j) == color) { count++; j++; }
     if (board.IsValid(x - dx*j, y - dy*j) && board.GetPiece(x - dx*j, y - dy*j) == EMPTY) emptyEnds++;
+    // ...
 
-    // --- 评分表 (Score Table) ---
-    // 这里的数值可以随意调整，越大越优先
-    
-    if (count >= 5) return 100000; // 成5，绝杀/必救
-    
+    // 使用变量代替硬编码
+    if (count >= 5) return m_stWeights.iWin5;
     if (count == 4) {
-        if (emptyEnds == 2) return 10000; // 活四 (011110) - 下一步必胜
-        if (emptyEnds == 1) return 5000;  // 冲四 (011112) - 逼迫对方
+        if (emptyEnds == 2) return m_stWeights.iLive4;
+        if (emptyEnds == 1) return m_stWeights.iDash4;
     }
-    
     if (count == 3) {
-        if (emptyEnds == 2) return 1000;  // 活三 (01110) - 强力进攻
-        if (emptyEnds == 1) return 100;   // 眠三
+        if (emptyEnds == 2) return m_stWeights.iLive3;
+        if (emptyEnds == 1) return m_stWeights.iLive2; // 眠三价值较低，近似活二
     }
-    
     if (count == 2) {
-        if (emptyEnds == 2) return 50;    // 活二
+        if (emptyEnds == 2) return m_stWeights.iLive2;
     }
 
-    return count; // 只有1个子，分很低
+    return count;
 }

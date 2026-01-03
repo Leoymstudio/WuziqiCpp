@@ -3,20 +3,41 @@
 
 #include "Player.h"
 #include "Board.h"
+#include <string>
+
+// AI的“大脑参数”
+struct AIWeights {
+    // 基础分值
+    int iWin5 = 100000;    // 连5
+    int iLive4 = 10000;    // 活4
+    int iDash4 = 5000;     // 冲4
+    int iLive3 = 1000;     // 活3
+    int iLive2 = 100;      // 活2
+
+    // 性格参数
+    float fAttackFactor = 1.0f;  // 进攻系数 (越高越爱进攻)
+    float fDefenseFactor = 1.0f; // 防守系数 (越高越怕死)
+};
 
 class CAIPlayer : public CPlayer {
 public:
     CAIPlayer(int color);
-    
-    // 覆写 MakeMove，AI 不需要键盘输入，而是自己计算
+
     virtual Point MakeMove(CBoard& board) override;
 
+    // [新增] 学习功能：根据胜负调整参数
+    void Learn(bool bAiWon);
+
 private:
-    // 核心算法：评估某个点的价值
+    AIWeights m_stWeights; // 当前的权重
+    std::string m_strWeightFile; // 记忆文件路径
+
     int EvaluatePoint(CBoard& board, int x, int y);
-    
-    // 辅助：计算某个方向的连子价值
-    int GetLineScore(CBoard& board, int x, int y, int dx, int dy, int targetColor);
+    int GetLineScore(CBoard& board, int x, int y, int dx, int dy, int color);
+
+    // 文件操作
+    void LoadWeights();
+    void SaveWeights();
 };
 
 #endif

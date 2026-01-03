@@ -130,6 +130,40 @@ int main() {
             if (bIsBlackTurn) cout << "(五连)";
             else cout << "(五连或长连)";
             cout << "\n########################################\n";
+            // ... (在打印完获胜信息后) ...
+
+            cout << "\n########################################\n";
+
+            // --- 触发 AI 学习 ---
+            // 我们需要知道谁是AI。
+            // mode 2: 人(黑) vs AI(白)
+            // mode 3: AI(黑) vs 人(白)
+
+            CAIPlayer* pAI = nullptr;
+            bool bAiWon = false;
+
+            if (mode == 2) {
+                // AI 是白棋
+                pAI = (CAIPlayer*)pWhite; // 强转
+                bAiWon = !bIsBlackTurn;   // 如果最后一步是黑下的(导致赢)，那AI没赢。等等，这里逻辑要理清
+
+                // 胜负逻辑：
+                // 如果 bIsBlackTurn 为 true (当前是黑回合)，说明上一手是白下的，且白赢了。
+                // 这里的 bIsBlackTurn 已经被 loop 末尾取反过了吗？
+                // 我们的代码在 break 前还没有取反。
+                // 所以：如果 bIsBlackTurn == true，说明黑棋赢了。
+
+                bAiWon = !bIsBlackTurn; // 黑赢(true) -> AI白输(false)
+            }
+            else if (mode == 3) {
+                // AI 是黑棋
+                pAI = (CAIPlayer*)pBlack;
+                bAiWon = bIsBlackTurn;
+            }
+
+            if (pAI != nullptr) {
+                pAI->Learn(bAiWon);
+            }
             break;
         }
 
@@ -139,6 +173,8 @@ int main() {
         bIsBlackTurn = !bIsBlackTurn;
         round++;
     }
+
+
 
 GAME_END:
     // 清理内存
