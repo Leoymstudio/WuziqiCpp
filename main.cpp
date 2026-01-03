@@ -130,41 +130,30 @@ int main() {
             if (bIsBlackTurn) cout << "(五连)";
             else cout << "(五连或长连)";
             cout << "\n########################################\n";
-            // ... (在打印完获胜信息后) ...
 
-            cout << "\n########################################\n";
-
-            // --- 触发 AI 学习 ---
-            // 我们需要知道谁是AI。
-            // mode 2: 人(黑) vs AI(白)
-            // mode 3: AI(黑) vs 人(白)
-
+            // ============== 学习逻辑开始 ==============
             CAIPlayer* pAI = nullptr;
             bool bAiWon = false;
 
+            // 这里的 mode 变量必须是在 main 开头定义的那个
+            // 确保你没有把它定义在 if 块里导致这里访问不到
             if (mode == 2) {
-                // AI 是白棋
-                pAI = (CAIPlayer*)pWhite; // 强转
-                bAiWon = !bIsBlackTurn;   // 如果最后一步是黑下的(导致赢)，那AI没赢。等等，这里逻辑要理清
-
-                // 胜负逻辑：
-                // 如果 bIsBlackTurn 为 true (当前是黑回合)，说明上一手是白下的，且白赢了。
-                // 这里的 bIsBlackTurn 已经被 loop 末尾取反过了吗？
-                // 我们的代码在 break 前还没有取反。
-                // 所以：如果 bIsBlackTurn == true，说明黑棋赢了。
-
-                bAiWon = !bIsBlackTurn; // 黑赢(true) -> AI白输(false)
+                // 模式2：人(黑) vs AI(白)。如果是黑赢(bIsBlackTurn=true)，则AI输
+                pAI = dynamic_cast<CAIPlayer*>(pWhite);
+                bAiWon = !bIsBlackTurn;
             }
             else if (mode == 3) {
-                // AI 是黑棋
-                pAI = (CAIPlayer*)pBlack;
+                // 模式3：AI(黑) vs 人(白)。如果是黑赢，则AI赢
+                pAI = dynamic_cast<CAIPlayer*>(pBlack);
                 bAiWon = bIsBlackTurn;
             }
 
             if (pAI != nullptr) {
-                pAI->Learn(bAiWon);
+                pAI->Learn(bAiWon); // 这句话会触发 SaveWeights
             }
-            break;
+            // ============== 学习逻辑结束 ==============
+
+            break; // 退出游戏大循环
         }
 
         string moveStr = (bIsBlackTurn ? "黑: " : "白: ") + PointToString(p);

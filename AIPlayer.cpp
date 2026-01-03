@@ -36,6 +36,11 @@ void CAIPlayer::SaveWeights() {
              << m_stWeights.iLive2 << " "
              << m_stWeights.fAttackFactor << " " << m_stWeights.fDefenseFactor;
         file.close();
+        // [新增] 打印成功提示，并显示当前路径
+        cout << "[系统] AI 记忆已保存至: " << m_strWeightFile << endl;
+    } else {
+        // [新增] 打印失败提示
+        cout << "[错误] 无法创建记忆文件！请检查文件夹权限。" << endl;
     }
 }
 
