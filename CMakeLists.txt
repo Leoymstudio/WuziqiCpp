@@ -8,4 +8,8 @@ add_executable(WuZiQiDemo main.cpp Board.cpp Console.cpp Player.cpp Board.h Cons
         Referee.h
         Referee.cpp
         AIPlayer.h
-        AIPlayer.cpp)
+        AIPlayer.cpp
+        NeuralNet.h
+        NeuralNet.cpp
+        StaticAI.h
+        StaticAI.cpp)

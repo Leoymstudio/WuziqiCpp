@@ -3,41 +3,34 @@
 
 #include "Player.h"
 #include "Board.h"
-#include <string>
-
-// AI的“大脑参数”
-struct AIWeights {
-    // 基础分值
-    int iWin5 = 100000;    // 连5
-    int iLive4 = 10000;    // 活4
-    int iDash4 = 5000;     // 冲4
-    int iLive3 = 1000;     // 活3
-    int iLive2 = 100;      // 活2
-
-    // 性格参数
-    float fAttackFactor = 1.0f;  // 进攻系数 (越高越爱进攻)
-    float fDefenseFactor = 1.0f; // 防守系数 (越高越怕死)
-};
+#include "NeuralNet.h"
+#include <vector>
 
 class CAIPlayer : public CPlayer {
 public:
     CAIPlayer(int color);
-
+    ~CAIPlayer();
+    void SaveBrain();
     virtual Point MakeMove(CBoard& board) override;
-
-    // [新增] 学习功能：根据胜负调整参数
     void Learn(bool bAiWon);
+    void SetTrainingMode(bool bTrain) { m_bTrainingMode = bTrain; }
 
 private:
-    AIWeights m_stWeights; // 当前的权重
-    std::string m_strWeightFile; // 记忆文件路径
+    NeuralNet* m_pBrain;
+    bool m_bTrainingMode = false;
+    struct MoveMemory {
+        std::vector<double> features;
+    };
+    std::vector<MoveMemory> m_matchMemory;
 
-    int EvaluatePoint(CBoard& board, int x, int y);
-    int GetLineScore(CBoard& board, int x, int y, int dx, int dy, int color);
+    // 获取特征向量 (神经网络的输入)
+    std::vector<double> GetFeatures(CBoard& board, int x, int y);
 
-    // 文件操作
-    void LoadWeights();
-    void SaveWeights();
+    // [重点新增] 判断某个方向的具体棋型类型
+    // 返回值：0=无/杂乱, 1=连五, 2=活四, 3=冲四, 4=活三, 5=活二
+    int GetPatternType(CBoard& board, int x, int y, int dx, int dy, int color);
+    // 检查是否有必杀点 (自己赢，或者必须堵的对方赢)
+    Point CheckEmergency(CBoard& board);
 };
 
 #endif

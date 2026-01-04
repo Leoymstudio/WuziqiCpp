@@ -3,6 +3,7 @@
 #include "Player.h"
 #include "Referee.h"
 #include "AIPlayer.h" // [新增]
+#include "StaticAI.h" // [新增] 引入陪练
 #include <cstdlib>
 #include <iostream>
 #include <vector>
@@ -10,7 +11,20 @@
 #include <ctime>      // [新增] 计时用
 
 using namespace std;
+// 一个只会随机下棋的“傻子”陪练
+class CRandomPlayer : public CPlayer {
+public:
+    CRandomPlayer(int color) : CPlayer(color) { srand((unsigned)time(NULL)); }
 
+    virtual Point MakeMove(CBoard& board) override {
+        // 简单粗暴：随机找个空位
+        while (true) {
+            int x = rand() % BOARD_SIZE;
+            int y = rand() % BOARD_SIZE;
+            if (board.IsEmpty(x, y)) return {x, y};
+        }
+    }
+};
 string PointToString(Point p) {
     string s = "";
     s += (char)('A' + p.iX);
@@ -20,16 +34,18 @@ string PointToString(Point p) {
 
 int main() {
     system("chcp 65001");
+    srand((unsigned)time(NULL)); // 随机种子
 
     // --- 1. 游戏模式选择 ---
     cout << "========================================" << endl;
     cout << "        五子棋大战 (C++ Console)        " << endl;
     cout << "========================================" << endl;
     cout << " 1. 人人对战 (P v P)" << endl;
-    cout << " 2. 人机对战 (P v E) - 你执黑" << endl;
-    cout << " 3. 人机对战 (P v E) - 你执白" << endl;
+    cout << " 2. 人机对战 (你执黑 vs NN白)" << endl;
+    cout << " 3. 人机对战 (NN黑 vs 你执白)" << endl;
+    cout << " 4. 训练模式 (NN vs 贪心AI) [快速进化]" << endl;
     cout << "========================================" << endl;
-    cout << " 请选择模式 (1-3): ";
+    cout << " 请选择模式 (1-4): ";
 
     int mode;
     cin >> mode;
@@ -38,15 +54,119 @@ int main() {
     CPlayer* pBlack = nullptr;
     CPlayer* pWhite = nullptr;
 
+
     if (mode == 2) {
         pBlack = new CHumanPlayer(BLACK);
         pWhite = new CAIPlayer(WHITE);
     } else if (mode == 3) {
         pBlack = new CAIPlayer(BLACK);
         pWhite = new CHumanPlayer(WHITE);
-    } else {
+    } else if (mode ==1) {
         pBlack = new CHumanPlayer(BLACK);
         pWhite = new CHumanPlayer(WHITE);
+    }else if (mode == 4) {
+        cout << "=== 训练模式启动 ===" << endl;
+
+        CAIPlayer* pNN = new CAIPlayer(BLACK); // NN 执黑
+        pNN->SetTrainingMode(true);
+
+        // 阶段一：虐菜训练 (建立基础自信)
+        cout << "\n[阶段一] 基础训练：对抗随机乱下棋的对手..." << endl;
+        cout << "目标：让神经网络学会基本的连珠规则" << endl;
+
+        CRandomPlayer* pRandom = new CRandomPlayer(WHITE);
+        int phase1Rounds = 1; // 练2000局
+        int nnWins = 0;
+
+        for (int i = 1; i <= phase1Rounds; i++) {
+            CBoard board;
+            bool bBlackTurn = true;
+            bool bGameEnd = false;
+            int moves = 0;
+
+            while (true) {
+                CPlayer* curr = bBlackTurn ? (CPlayer*)pNN : (CPlayer*)pRandom;
+                Point p = curr->MakeMove(board);
+
+                int color = bBlackTurn ? BLACK : WHITE;
+                board.PlacePiece(p.iX, p.iY, color);
+                moves++;
+
+                if (CReferee::CheckWin(board, p.iX, p.iY)) {
+                    if (bBlackTurn) { pNN->Learn(true); nnWins++; } // NN赢
+                    else { pNN->Learn(false); } // NN输
+                    bGameEnd = true;
+                } else if (bBlackTurn && CReferee::CheckForbidden(board, p.iX, p.iY)) {
+                    pNN->Learn(false); // 禁手输
+                    bGameEnd = true;
+                } else if (moves >= BOARD_SIZE * BOARD_SIZE) {
+                     pNN->Learn(false); // 平局算输
+                     bGameEnd = true;
+                }
+
+                if (bGameEnd) break;
+                bBlackTurn = !bBlackTurn;
+            }
+
+            if (i % 100 == 0) {
+                printf("阶段一进度: %d/%d | NN胜率: %.1f%% \n", i, phase1Rounds, (float)nnWins/i*100.0f);
+            }
+        }
+        delete pRandom; // 傻子陪练下班了
+
+        // 阶段二：进阶训练 (对抗贪心算法)
+        cout << "\n[阶段二] 进阶训练：对抗贪心算法(StaticAI)..." << endl;
+        cout << "注意：刚开始胜率可能会暴跌，这是正常的，它在适应高强度对抗。" << endl;
+
+        CStaticAI* pStatic = new CStaticAI(WHITE);
+        int phase2Rounds = 3000; // 再练3000局
+        nnWins = 0; // 重置统计
+
+        for (int i = 1; i <= phase2Rounds; i++) {
+            CBoard board;
+            bool bBlackTurn = true;
+            bool bGameEnd = false;
+            int moves = 0;
+
+            while (true) {
+                CPlayer* curr = bBlackTurn ? (CPlayer*)pNN : (CPlayer*)pStatic;
+                Point p = curr->MakeMove(board);
+
+                int color = bBlackTurn ? BLACK : WHITE;
+                board.PlacePiece(p.iX, p.iY, color);
+                moves++;
+
+                if (CReferee::CheckWin(board, p.iX, p.iY)) {
+                    if (bBlackTurn) { pNN->Learn(true); nnWins++; }
+                    else { pNN->Learn(false); }
+                    bGameEnd = true;
+                } else if (bBlackTurn && CReferee::CheckForbidden(board, p.iX, p.iY)) {
+                    pNN->Learn(false);
+                    bGameEnd = true;
+                } else if (moves >= BOARD_SIZE * BOARD_SIZE) {
+                     pNN->Learn(false);
+                     bGameEnd = true;
+                }
+
+                if (bGameEnd) break;
+                bBlackTurn = !bBlackTurn;
+            }
+            if (i % 1000 == 0) {
+                pNN->SaveBrain(); // 定期存档，防止断电白练
+                printf(">>> 存档成功 (第 %d 局) <<<\n", i);
+            }
+            if (i % 100 == 0) {
+                 printf("阶段二进度: %d/%d | NN胜率: %.1f%% \n", i, phase2Rounds, (float)nnWins/i*100.0f);
+            }
+        }
+        pNN->SaveBrain();
+        cout << "训练全部结束！模型已保存。" << endl;
+        delete pNN;
+        delete pStatic;
+
+        cout << "按任意键退出...";
+        cin.ignore(); cin.get();
+        return 0;
     }
 
     bool bIsBlackTurn = true;
